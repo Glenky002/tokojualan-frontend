@@ -37,13 +37,25 @@ export const isAdmin = () => {
   return localStorage.getItem('is_staff') === 'true';
 };
 
-// Mengambil semua daftar user (Khusus Admin)
-export const getAllUsers = async () => {
+// // Mengambil semua daftar user (Khusus Admin)
+// export const getAllUsers = async (page = 1) => {
+//   const token = localStorage.getItem('access_token');
+//   // Pastikan ada ?page=${page} di URL-nya
+//   const response = await api.get(`/users/?page=${page}`, {
+//     headers: { Authorization: `Bearer ${token}` }
+//   });
+//   return response.data; // Ini mengembalikan objek {count, next, previous, results}
+// };
+
+export const getAllUsers = async (page = 1) => {
   const token = localStorage.getItem('access_token');
-  const response = await api.get('/auth/users/', {
+  
+  // Perhatikan tanda tanya (?page=...) di sini!
+  const response = await api.get(`/users/?page=${page}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
-  return response.data;
+  
+  return response.data; 
 };
 
 // Mengubah user biasa menjadi pegawai/admin
@@ -52,5 +64,22 @@ export const promoteUser = async (userId) => {
   const response = await api.patch(`/auth/users/${userId}/promote/`, {}, {
     headers: { Authorization: `Bearer ${token}` }
   });
+  return response.data;
+};
+
+export const deleteUser = async (userId) => {
+  const response = await api.delete(`/users/${userId}/delete/`);
+  return response.data;
+};
+
+export const adminUpdatePassword = async (userId, newPassword) => {
+  const response = await api.patch(`/users/${userId}/change_password/`, { 
+    password: newPassword 
+  });
+  return response.data;
+};
+
+export const toggleUserStatus = async (userId) => {
+  const response = await api.patch(`/users/${userId}/toggle-status/`);
   return response.data;
 };

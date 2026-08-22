@@ -20,11 +20,10 @@ export default function Login() {
     try {
       const data = await loginUser(formData);
       
-      // Cek apakah user adalah admin atau pembeli, lalu arahkan sesuai hak aksesnya
       if (data.is_staff) {
         navigate('/admin/products');
       } else {
-        navigate('/'); // Halaman katalog publik pembeli
+        navigate('/');
       }
     } catch (err) {
       console.error("Login gagal:", err);
@@ -35,7 +34,19 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center font-sans px-4">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center font-sans px-4 relative">
+      
+      {/* TOMBOL KEMBALI / PEMBATALAN DI POJOK KANAN ATAS */}
+      <button 
+        onClick={() => navigate('/')}
+        className="absolute top-6 right-6 px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded-xl shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round5" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+        </svg>
+        Kembali ke Beranda
+      </button>
+
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
         
         <div className="text-center mb-8">

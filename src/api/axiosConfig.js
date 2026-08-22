@@ -2,6 +2,7 @@ import axios from 'axios';
 
 const API = axios.create({
   baseURL: 'https://GreenNus.pythonanywhere.com/api',
+  // baseURL: 'http://127.0.0.1:8000/api',
 });
 
 // 1. Interceptor Request: Mengirim token di setiap request

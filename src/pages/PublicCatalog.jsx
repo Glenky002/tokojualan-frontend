@@ -1462,6 +1462,16 @@ export default function PublicCatalog() {
     if (e) e.stopPropagation();
     if (product.stock <= 0) return;
 
+    // 1. Cek apakah user sudah login lewat token
+    const token = localStorage.getItem('access_token');
+
+    if (!token) {
+      // Jika belum login, arahkan ke halaman login
+      navigate('/login');
+      return;
+    }
+
+    // 2. Jika sudah login, jalankan fungsi aslimu
     setCart([{ ...product, quantity: 1 }]);
     setIsFormOpen(true);
   };
@@ -1509,11 +1519,26 @@ export default function PublicCatalog() {
     return message;
   };
 
+  const handleOpenCheckoutForm = () => {
+    // 1. Cek login dulu
+    const token = localStorage.getItem('access_token');
+    
+    if (!token) {
+      // Kalau belum login, lempar ke login
+      navigate('/login');
+      return;
+    }
+
+    // 2. Kalau sudah login, buka modal form checkout-nya
+    setIsFormOpen(true);
+  };
+
   // Checkout WhatsApp dengan Tampilan Sukses (Success View)
   const handleCheckoutWhatsApp = (e) => {
     e.preventDefault();
     if (cart.length === 0) return;
 
+    // 2. Jika sudah login, cek kelengkapan data form
     if (!customerForm.name || !customerForm.phone || !customerForm.address) {
       showToast('⚠️ Mohon lengkapi Nama, No. HP, dan Alamat pengiriman!');
       return;
@@ -1910,7 +1935,7 @@ export default function PublicCatalog() {
                   </span>
                 </div>
                 <button
-                  onClick={() => setIsFormOpen(true)}
+                  onClick={handleOpenCheckoutForm}
                   className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold text-sm transition shadow-md shadow-emerald-100 cursor-pointer"
                 >
                   Checkout via WhatsApp 📲
@@ -2091,6 +2116,31 @@ export default function PublicCatalog() {
           </div>
         </div>
       )}
+
+      {/* Tombol Floating WhatsApp */}
+      <a
+        href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent("Halo, saya ingin bertanya seputar produk di katalog.")}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-6 right-6 z-50 bg-emerald-500 hover:bg-emerald-600 text-white p-4 rounded-full shadow-lg transition-transform hover:scale-110 flex items-center justify-center cursor-pointer"
+        title="Hubungi Kami via WhatsApp"
+      >
+        {/* SVG Icon WhatsApp */}
+        <svg 
+          xmlns="http://www.w3.org/2000/svg" 
+          width="28" 
+          height="28" 
+          viewBox="0 0 24 24" 
+          fill="none" 
+          stroke="currentColor" 
+          strokeWidth="2" 
+          strokeLinecap="round" 
+          strokeLinejoin="round" 
+          className="lucide lucide-message-circle"
+        >
+          <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+        </svg>
+      </a>
 
     </div>
   );
