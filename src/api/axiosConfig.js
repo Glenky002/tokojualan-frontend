@@ -27,8 +27,13 @@ API.interceptors.response.use(
       try {
         const refreshToken = localStorage.getItem('refresh_token');
         
-        // Panggil endpoint refresh token di backend Anda
-        const response = await axios.post('http://127.0.0.1:8000/api/token/refresh/', {
+        // // Panggil endpoint refresh token di backend Anda
+        // const response = await axios.post('http://127.0.0.1:8000/api/token/refresh/', {
+        //   refresh: refreshToken,
+        // });
+
+        // Ganti baris axios.post('http://127.0.0.1:8000/api/token/refresh/', ...) menjadi:
+        const response = await axios.post('https://GreenNus.pythonanywhere.com/api/token/refresh/', {
           refresh: refreshToken,
         });
 
