@@ -9,7 +9,9 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable'; // Import langsung function-nya
 import { useNavigate } from 'react-router-dom';
+// import TransactionsManagement from '../components/TransactionsManagement'; // Sesuaikan path foldernya jika berbeda
 import UserManagement from '../components/UserManagement';
+import AdminOrders from '../components/AdminOrders'; // Sesuaikan path folder-nya jika berbeda
 
 export default function ProductAdmin() {
   const [products, setProducts] = useState([]);
@@ -319,6 +321,18 @@ export default function ProductAdmin() {
     setDeleteModal({ show: true, id, name });
   };
 
+  // --- FUNGSI HAPUS BANYAK (BULK DELETE) ---
+  const handleBulkDelete = async (ids) => {
+    try {
+      await api.post('/products/bulk_delete/', { ids });
+      fetchProducts();
+      showToast(`Berhasil menghapus ${ids.length} produk`, "success");
+    } catch (err) {
+      showToast("Gagal menghapus produk terpilih", "error");
+      throw err;
+    }
+  };
+
   // Fungsi untuk benar-benar mengeksekusi penghapusan ke API
   const executeDelete = () => {
     api.delete(`/products/${deleteModal.id}/`).then(() => {
@@ -380,6 +394,21 @@ export default function ProductAdmin() {
           >
             👥 Kelola Pengguna / Pegawai
           </button>
+
+          {/* ---> TAMBAHKAN TOMBOL KELOLA PESANAN DI SINI <--- */}
+          <button 
+            onClick={() => setActiveTab('orders')} 
+            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition cursor-pointer ${activeTab === 'orders' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
+          >
+            📦 Kelola Pesanan
+          </button>
+
+          {/* <button 
+            onClick={() => setActiveTab('transactions')} 
+            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition cursor-pointer ${activeTab === 'transactions' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
+          >
+            💳 Kelola Transaksi
+          </button> */}
         </div>
 
         {/* Render Konten Berdasarkan Tab yang Aktif */}
@@ -389,6 +418,7 @@ export default function ProductAdmin() {
             onEdit={handleOpenEditModal}
             onDelete={(id, name) => confirmDelete(id, name)}
             onOpenAddModal={handleOpenAddModal}
+            onBulkDelete={handleBulkDelete} /* <-- PROPS HAPUS BANYAK DI SINI */
             totalItems={totalItems}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
@@ -413,6 +443,15 @@ export default function ProductAdmin() {
         {activeTab === 'users' && (
           <UserManagement showToast={showToast} />
         )}
+
+        {activeTab === 'orders' && (
+          <AdminOrders showToast={showToast} />
+        )}
+
+        {/* ---> TAMBAHKAN INI DI SINI <---
+        {activeTab === 'transactions' && (
+          <TransactionsManagement />
+        )} */}
       </div>
 
       <ProductModal 

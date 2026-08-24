@@ -1,8 +1,8 @@
 import axios from 'axios';
 
 const API = axios.create({
-  baseURL: 'https://GreenNus.pythonanywhere.com/api',
-  // baseURL: 'http://127.0.0.1:8000/api',
+  // baseURL: 'https://GreenNus.pythonanywhere.com/api',
+  baseURL: 'http://127.0.0.1:8000/api',
 });
 
 // 1. Interceptor Request: Mengirim token di setiap request
@@ -31,6 +31,10 @@ API.interceptors.response.use(
         const response = await axios.post('http://127.0.0.1:8000/api/token/refresh/', {
           refresh: refreshToken,
         });
+
+        // const response = await axios.post('https://GreenNus.pythonanywhere.com/api/token/refresh/', {
+        //   refresh: refreshToken,
+        // });
 
         const { access } = response.data;
         localStorage.setItem('access_token', access);

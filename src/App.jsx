@@ -2,10 +2,11 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import ProductAdmin from './pages/ProductAdmin';
 import ManageUsers from './components/UserManagement'; 
+import AdminOrders from './components/AdminOrders'; // <--- 1. IMPORT KOMPONEN ADMIN ORDERS
 import Catalog from './pages/PublicCatalog';
 import Login from './pages/Login';
 import Register from './pages/Register';
-import Profile from './pages/Profile'; // <--- 1. IMPORT HALAMAN PROFIL
+import Profile from './pages/Profile';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -43,6 +44,16 @@ function App() {
           element={
             <ProtectedRoute requireAdmin={true}>
               <ManageUsers />
+            </ProtectedRoute>
+          } 
+        />
+
+        {/* ---> 2. RUTE KELOLA PESANAN ADMIN <--- */}
+        <Route 
+          path="/admin/orders" 
+          element={
+            <ProtectedRoute requireAdmin={true}>
+              <AdminOrders />
             </ProtectedRoute>
           } 
         />

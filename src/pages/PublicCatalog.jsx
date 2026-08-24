@@ -1314,9 +1314,15 @@ export default function PublicCatalog() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const navigate = useNavigate();
 
+  const [isZoomOpen, setIsZoomOpen] = useState(false);
+
   // Filter & Search State
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
+
+  // ---> TAMBAHKAN STATE ALAMAT DI SINI <---
+  const [addresses, setAddresses] = useState([]);
+  const [selectedAddress, setSelectedAddress] = useState(null);
   
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -1335,6 +1341,8 @@ export default function PublicCatalog() {
 
   // Notifikasi Toast Custom State
   const [toastMessage, setToastMessage] = useState(null);
+
+  const [flyingImage, setFlyingImage] = useState(null);
 
   // Form Identitas Pembeli State
   const [customerForm, setCustomerForm] = useState({
@@ -1394,6 +1402,26 @@ export default function PublicCatalog() {
     }
   }, []);
 
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      // Ambil data alamat pengiriman user jika sudah login
+      api.get('/shipping-addresses/')
+        .then((res) => {
+          const data = res.data.results || res.data;
+          setAddresses(data);
+          const defaultAddr = data.find(addr => addr.is_default);
+          if (defaultAddr) {
+            setSelectedAddress(defaultAddr);
+          } else if (data.length > 0) {
+            setSelectedAddress(data[0]);
+          }
+        })
+        .catch((err) => console.log("Gagal memuat alamat pengiriman:", err));
+    }
+  }, []);
+
+
   const handleLogout = () => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
@@ -1441,7 +1469,49 @@ export default function PublicCatalog() {
   const addToCart = (product, e) => {
     if (e) e.stopPropagation();
     if (product.stock <= 0) return;
-    
+
+    // --- ANIMASI FLYING TO CART ---
+    if (e && e.target) {
+      const buttonRect = e.target.getBoundingClientRect();
+      // Cari posisi keranjang di header (asumsi ikon keranjang ada di kanan atas)
+      const cartIcon = document.querySelector('button.bg-indigo-600'); 
+      
+      if (cartIcon) {
+        const cartRect = cartIcon.getBoundingClientRect();
+
+        // Buat elemen gambar melayang sementara
+        const flyer = document.createElement('div');
+        flyer.innerHTML = `<img src="${product.image || 'https://via.placeholder.com/50'}" class="w-full h-full object-cover rounded-xl shadow-2xl border-2 border-indigo-500" />`;
+        flyer.style.position = 'fixed';
+        flyer.style.left = `${buttonRect.left}px`;
+        flyer.style.top = `${buttonRect.top}px`;
+        flyer.style.width = '45px';
+        flyer.style.height = '45px';
+        flyer.style.zIndex = '9999';
+        
+        // SETEL DURASI DI SINI (Misal 1.2 detik biar benar-benar kelihatan terbang santai)
+        flyer.style.transition = 'all 1.2s cubic-bezier(0.25, 1, 0.5, 1)';
+        document.body.appendChild(flyer);
+
+        // 2. Jeda sedikit (100ms) agar browser siap, baru jalankan perpindahan ke keranjang
+        setTimeout(() => {
+          flyer.style.left = `${cartRect.left + cartRect.width / 2 - 20}px`;
+          flyer.style.top = `${cartRect.top}px`;
+          flyer.style.transform = 'scale(0.15) rotate(360deg)';
+          flyer.style.opacity = '0.3';
+        }, 100); // Diubah dari 20 jadi 100 biar ada jeda mulainya
+
+        // 3. Hapus elemen setelah animasi benar-benar selesai (harus > 1200ms)
+        setTimeout(() => {
+          flyer.remove();
+        }, 1400); // 1.4 detik baru dihapus
+      }
+    }
+    // -----------------------------
+
+    // Trigger toast masuk keranjang di bawah
+    showToast(`✨ Berhasil menambahkan "${product.name}" ke keranjang!`);
+
     setCart((prevCart) => {
       const existingItem = prevCart.find((item) => item.id === product.id);
       if (existingItem) {
@@ -1534,35 +1604,68 @@ export default function PublicCatalog() {
   };
 
   // Checkout WhatsApp dengan Tampilan Sukses (Success View)
-  const handleCheckoutWhatsApp = (e) => {
+ const handleCheckoutWhatsApp = async (e) => {
     e.preventDefault();
     if (cart.length === 0) return;
 
-    // 2. Jika sudah login, cek kelengkapan data form
+    // 1. Cek kelengkapan data form
     if (!customerForm.name || !customerForm.phone || !customerForm.address) {
       showToast('⚠️ Mohon lengkapi Nama, No. HP, dan Alamat pengiriman!');
       return;
     }
 
-    const message = generateWhatsAppMessage();
-    const encodedMessage = encodeURIComponent(message);
-    const whatsappUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodedMessage}`;
+    // Hitung total belanja dari keranjang
+    const totalAmount = cart.reduce((sum, item) => sum + (Number(item.selling_price || item.price) * item.quantity), 0);
 
-    // Simpan data pesanan ke state sukses sebelum membuka WhatsApp
-    setOrderSuccessData({
-      message,
-      whatsappUrl,
-      cartSnapshot: [...cart],
-      totalSnapshot: totalPrice
-    });
+    // 2. Siapkan data items sesuai dengan TransactionSerializer Django
+    // Menggunakan ID produk asli (item.id) supaya stok bisa dipotong otomatis
+    const itemsPayload = cart.map(item => ({
+      product: item.id, 
+      quantity: item.quantity,
+      price_at_sale: Number(item.selling_price || item.price)
+    }));
 
-    // Reset keranjang & tutup modal form
-    setCart([]);
-    setIsFormOpen(false);
-    setIsCartOpen(false);
+    const transactionPayload = {
+      customer_name: customerForm.name,
+      customer_phone: customerForm.phone,
+      shipping_address: customerForm.address,
+      total_amount: totalAmount,
+      order_type: 'WhatsApp Order',
+      status: 'Belum Bayar', // Status awal saat checkout
+      items: itemsPayload
+    };
 
-    // Buka WhatsApp di tab baru
-    window.open(whatsappUrl, '_blank');
+    try {
+      // 3. Simpan transaksi ke backend endpoint /transactions/
+      // Pastikan menggunakan 'API' (instance axiosConfig kamu)
+      const response = await api.post('/transactions/', transactionPayload);
+      // console.log("Transaksi berhasil dicatat ke database:", response.data);
+
+      const message = generateWhatsAppMessage();
+      const encodedMessage = encodeURIComponent(message);
+      const whatsappUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodedMessage}`;
+
+      // Simpan data pesanan ke state sukses sebelum membuka WhatsApp
+      setOrderSuccessData({
+        message,
+        whatsappUrl,
+        cartSnapshot: [...cart],
+        totalSnapshot: totalAmount
+      });
+
+      // Reset keranjang & tutup modal form
+      setCart([]);
+      setIsFormOpen(false);
+      setIsCartOpen(false);
+
+      // Buka WhatsApp di tab baru
+      window.open(whatsappUrl, '_blank');
+      showToast('✅ Pesanan berhasil dibuat & tercatat di sistem!');
+
+    } catch (error) {
+      console.error("Gagal menyimpan transaksi ke database:", error.response?.data || error);
+      showToast('❌ Gagal memproses pesanan ke sistem. Cek stok atau koneksi.');
+    }
   };
 
   // Fitur Salin Pesanan ke Clipboard dengan Toast Custom
@@ -1581,7 +1684,7 @@ export default function PublicCatalog() {
       
       {/* === CUSTOM TOAST NOTIFICATION === */}
       {toastMessage && (
-        <div className="fixed top-6 right-6 z-[99] bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700 text-sm font-bold flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300">
+        <div className="fixed bottom-6 right-6 z-[99] bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700 text-sm font-bold flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
           <span>{toastMessage}</span>
         </div>
       )}
@@ -1946,7 +2049,8 @@ export default function PublicCatalog() {
         </div>
       )}
 
-      {/* === MODAL FORM CHECKOUT WHATSAPP === */}
+
+  {/* === MODAL FORM CHECKOUT WHATSAPP === */}
       {isFormOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-100">
@@ -1961,45 +2065,69 @@ export default function PublicCatalog() {
             </div>
 
             <form onSubmit={handleCheckoutWhatsApp} className="space-y-4">
+              
+              {/* --- PILIH ALAMAT DARI PROFIL --- */}
               <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Nama Lengkap</label>
-                <input
-                  type="text"
-                  name="name"
-                  value={customerForm.name}
-                  onChange={handleFormChange}
-                  required
-                  placeholder="Contoh: Budi Santoso"
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs font-bold text-slate-600 uppercase">Pilih Alamat Pengiriman</label>
+                  <Link to="/profile" className="text-xs text-indigo-600 font-bold hover:underline">
+                    + Kelola Alamat Profil
+                  </Link>
+                </div>
+
+                {addresses.length === 0 ? (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 space-y-1">
+                    <p>⚠️ Belum ada alamat tersimpan di profilmu.</p>
+                    <Link to="/profile" className="inline-block font-bold underline text-amber-800">
+                      Tambah alamat & titik map dulu di sini ➔
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                    {addresses.map((addr) => (
+                      <div
+                        key={addr.id}
+                        onClick={() => {
+                          setSelectedAddress(addr);
+                          // Otomatis isi data customerForm agar sinkron saat pesan dikirim
+                          setCustomerForm(prev => ({
+                            ...prev,
+                            name: addr.recipient_name,
+                            phone: addr.phone_number,
+                            address: `${addr.address_line}, ${addr.city} (${addr.postal_code})${addr.latitude ? ` [Lat: ${addr.latitude.toFixed(4)}, Lng: ${addr.longitude.toFixed(4)}]` : ''}`
+                          }));
+                        }}
+                        className={`p-3 rounded-xl border text-xs cursor-pointer transition flex justify-between items-center ${
+                          selectedAddress?.id === addr.id 
+                            ? 'bg-indigo-50 border-indigo-500 shadow-xs' 
+                            : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                            <span>{addr.recipient_name}</span>
+                            <span className="text-slate-500 font-normal">({addr.phone_number})</span>
+                            {addr.is_default && (
+                              <span className="bg-indigo-600 text-white text-[9px] px-1.5 py-0.2 rounded-full">Utama</span>
+                            )}
+                          </div>
+                          <p className="text-slate-600 mt-0.5 line-clamp-2">{addr.address_line}, {addr.city}</p>
+                          {addr.latitude && addr.longitude && (
+                            <span className="text-[10px] text-indigo-600 font-semibold block mt-1">
+                              📍 Koordinat Map Tersimpan
+                            </span>
+                          )}
+                        </div>
+                        <div className="w-4 h-4 rounded-full border-2 border-indigo-600 flex items-center justify-center shrink-0 ml-2">
+                          {selectedAddress?.id === addr.id && <div className="w-2 h-2 bg-indigo-600 rounded-full"></div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Nomor WhatsApp / HP</label>
-                <input
-                  type="tel"
-                  name="phone"
-                  value={customerForm.phone}
-                  onChange={handleFormChange}
-                  required
-                  placeholder="Contoh: 08123456789"
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Alamat Pengiriman Lengkap</label>
-                <textarea
-                  name="address"
-                  value={customerForm.address}
-                  onChange={handleFormChange}
-                  required
-                  rows="3"
-                  placeholder="Jalan, No Rumah, RT/RW, Kecamatan, Kota"
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                ></textarea>
-              </div>
-
+              {/* Catatan Tambahan */}
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Catatan Tambahan (Opsional)</label>
                 <input
@@ -2022,7 +2150,8 @@ export default function PublicCatalog() {
                 </button>
                 <button
                   type="submit"
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold text-xs transition shadow-md shadow-emerald-100 cursor-pointer"
+                  disabled={!selectedAddress}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-xs transition shadow-md shadow-emerald-100 cursor-pointer"
                 >
                   Kirim via WhatsApp 🚀
                 </button>
@@ -2032,56 +2161,124 @@ export default function PublicCatalog() {
         </div>
       )}
 
-      {/* === MODAL DETAIL PRODUK === */}
+{/* === MODAL DETAIL PRODUK === */}
       {selectedProduct && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 border border-slate-100">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 transition-all">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 border border-slate-100 overflow-hidden transform transition-all">
+            
+            {/* Header Modal */}
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-slate-900">Detail Produk</h3>
+              <span className="text-[11px] font-extrabold uppercase tracking-wider px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full">
+                {selectedProduct.category_name || selectedProduct.category?.name || 'Katalog Produk'}
+              </span>
               <button 
                 onClick={() => setSelectedProduct(null)}
-                className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 font-bold flex items-center justify-center hover:bg-slate-200 transition cursor-pointer"
+                className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold flex items-center justify-center hover:bg-slate-200 transition cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <div className="h-56 bg-slate-100 rounded-xl mb-4 flex items-center justify-center overflow-hidden relative">
-              {selectedProduct.image ? (
-                <img src={selectedProduct.image} alt={selectedProduct.name} className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-slate-400 text-sm">Tidak Ada Foto</span>
-              )}
-              {selectedProduct.stock <= 0 && (
-                <div className="absolute inset-0 bg-slate-900/40 flex items-center justify-center">
-                  <span className="px-4 py-1.5 bg-rose-600 text-white font-extrabold text-sm rounded-xl shadow-md uppercase">
-                    Stok Habis
-                  </span>
+            {/* Area Gambar Utama & Slide Thumbnail */}
+            <div className="space-y-3 mb-5">
+              {/* Gambar Utama yang Sedang Dipilih (Bisa diklik untuk zoom) */}
+              <div 
+                onClick={() => {
+                  const currentImg = selectedProduct.activeImage || selectedProduct.image || (selectedProduct.images && selectedProduct.images[0]?.image);
+                  if (currentImg) setIsZoomOpen(true);
+                }}
+                className="h-64 bg-slate-100 rounded-2xl flex items-center justify-center overflow-hidden relative shadow-inner group cursor-pointer"
+                title="Klik untuk memperbesar gambar"
+              >
+                {selectedProduct.image || (selectedProduct.images && selectedProduct.images.length > 0) ? (
+                  <>
+                    <img 
+                      src={selectedProduct.activeImage || selectedProduct.image || selectedProduct.images[0]?.image} 
+                      alt={selectedProduct.name} 
+                      className="w-full h-full object-cover transition-all duration-300 group-hover:scale-105" 
+                    />
+                    {/* Label/ikon petunjuk klik zoom */}
+                    <div className="absolute bottom-3 right-3 bg-slate-900/70 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-xl opacity-0 group-hover:opacity-100 transition flex items-center gap-1 shadow-md">
+                      <span>🔍</span> Klik untuk perbesar
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center text-slate-400">
+                    <span className="text-3xl mb-1">📦</span>
+                    <span className="text-xs font-medium">Tidak Ada Foto</span>
+                  </div>
+                )}
+
+                {/* Badge Stok Habis */}
+                {selectedProduct.stock <= 0 && (
+                  <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px] flex items-center justify-center">
+                    <span className="px-5 py-2 bg-rose-600 text-white font-extrabold text-xs rounded-xl shadow-lg uppercase tracking-wider">
+                      Stok Habis
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Thumbnail / Daftar Foto Tambahan (Bisa di-klik buat ganti slide) */}
+              {selectedProduct.images && selectedProduct.images.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                  {selectedProduct.image && (
+                    <button
+                      onClick={() => setSelectedProduct({...selectedProduct, activeImage: selectedProduct.image})}
+                      className={`w-14 h-14 rounded-xl overflow-hidden border-2 shrink-0 transition ${
+                        (!selectedProduct.activeImage || selectedProduct.activeImage === selectedProduct.image) 
+                          ? 'border-indigo-600 shadow-md ring-2 ring-indigo-100' 
+                          : 'border-slate-200 opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <img src={selectedProduct.image} alt="thumb" className="w-full h-full object-cover" />
+                    </button>
+                  )}
+                  
+                  {selectedProduct.images.map((imgObj, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setSelectedProduct({...selectedProduct, activeImage: imgObj.image})}
+                      className={`w-14 h-14 rounded-xl overflow-hidden border-2 shrink-0 transition ${
+                        selectedProduct.activeImage === imgObj.image 
+                          ? 'border-indigo-600 shadow-md ring-2 ring-indigo-100' 
+                          : 'border-slate-200 opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <img src={imgObj.image} alt={`thumb-${idx}`} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
 
-            <span className="text-xs font-bold text-indigo-600 uppercase">
-              {selectedProduct.category_name || selectedProduct.category?.name || 'Kategori'}
-            </span>
-            <h2 className="text-xl font-extrabold text-slate-900 mt-0.5 mb-2">{selectedProduct.name}</h2>
-            <p className="text-sm text-slate-600 mb-6 leading-relaxed">{selectedProduct.description || "Belum ada deskripsi untuk produk ini."}</p>
+            {/* Informasi Nama & Deskripsi */}
+            <div className="mb-5">
+              <h2 className="text-xl font-black text-slate-900 mb-2 leading-snug">{selectedProduct.name}</h2>
+              <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100 max-h-24 overflow-y-auto">
+                {selectedProduct.description || "Belum ada deskripsi untuk produk ini."}
+              </p>
+            </div>
 
-            <div className="flex items-center justify-between pt-4 border-t border-slate-100 mb-6">
+            {/* Harga & Informasi Stok */}
+            <div className="flex items-center justify-between p-4 bg-slate-50/80 rounded-2xl border border-slate-100 mb-6">
               <div>
-                <span className="text-xs text-slate-400 block font-medium">Harga</span>
-                <span className="text-xl font-extrabold text-emerald-600">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Harga Satuan</span>
+                <span className="text-xl font-black text-emerald-600">
                   Rp {Number(selectedProduct.selling_price).toLocaleString('id-ID')}
                 </span>
               </div>
-              <div>
-                <span className="text-xs text-slate-400 block font-medium">Stok Tersedia</span>
-                <span className={`text-base font-bold ${selectedProduct.stock <= 0 ? 'text-rose-600' : 'text-slate-700'}`}>
-                  {selectedProduct.stock} Pcs
+              <div className="text-right">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Ketersediaan</span>
+                <span className={`text-sm font-extrabold px-2.5 py-0.5 rounded-lg inline-block ${
+                  selectedProduct.stock <= 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-700'
+                }`}>
+                  {selectedProduct.stock} Pcs Tersedia
                 </span>
               </div>
             </div>
 
+            {/* Tombol Aksi */}
             <div className="grid grid-cols-2 gap-3">
               <button
                 disabled={selectedProduct.stock <= 0}
@@ -2090,13 +2287,13 @@ export default function PublicCatalog() {
                   setSelectedProduct(null);
                   setIsCartOpen(true);
                 }}
-                className={`py-3 rounded-xl font-bold text-xs transition border cursor-pointer shadow-xs ${
+                className={`py-3.5 rounded-2xl font-bold text-xs transition border cursor-pointer shadow-xs flex items-center justify-center gap-1.5 ${
                   selectedProduct.stock > 0 
                     ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white border-indigo-100' 
                     : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
                 }`}
               >
-                + Masukkan Keranjang 🛒
+                <span>🛒</span> + Keranjang
               </button>
               <button
                 disabled={selectedProduct.stock <= 0}
@@ -2104,15 +2301,41 @@ export default function PublicCatalog() {
                   handleBuyNow(selectedProduct, e);
                   setSelectedProduct(null);
                 }}
-                className={`py-3 rounded-xl font-bold text-xs transition shadow-md cursor-pointer ${
+                className={`py-3.5 rounded-2xl font-bold text-xs transition shadow-lg cursor-pointer flex items-center justify-center gap-1.5 ${
                   selectedProduct.stock > 0 
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-100' 
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200' 
                     : 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none'
                 }`}
               >
-                Beli Cepat 🚀
+                <span>🚀</span> Beli Cepat
               </button>
             </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* === SUB-MODAL ZOOM / LIGHTBOX GAMBAR FULLSCREEN === */}
+      {isZoomOpen && selectedProduct && (
+        <div 
+          onClick={() => setIsZoomOpen(false)}
+          className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center z-[60] p-4 cursor-zoom-out"
+        >
+          <div className="relative max-w-4xl max-h-[90vh] w-full flex items-center justify-center">
+            {/* Tombol Close Zoom */}
+            <button 
+              onClick={() => setIsZoomOpen(false)}
+              className="absolute -top-12 right-0 w-10 h-10 rounded-full bg-white/10 hover:bg-white/25 text-white font-bold flex items-center justify-center transition cursor-pointer text-lg"
+            >
+              ✕
+            </button>
+            {/* Gambar Ukuran Penuh */}
+            <img 
+              src={selectedProduct.activeImage || selectedProduct.image || (selectedProduct.images && selectedProduct.images[0]?.image)} 
+              alt={selectedProduct.name} 
+              className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl border border-white/10"
+              onClick={(e) => e.stopPropagation()} // Supaya klik di area gambar tidak sengaja menutup modal
+            />
           </div>
         </div>
       )}
